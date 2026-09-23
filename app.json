@@ -1,0 +1,45 @@
+{
+  "expo": {
+    "name": "Canto da Sorte",
+    "slug": "canto-da-sorte",
+    "version": "1.0.0",
+    "orientation": "default",
+    "icon": "./assets/logo-canto-da-sorte.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/logo-canto-da-sorte.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#2E1B10"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.cantodasorte.pdv",
+      "adaptiveIcon": {
+        "backgroundColor": "#2E1B10",
+        "foregroundImage": "./assets/logo-canto-da-sorte.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_MEDIA_IMAGES"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-sqlite",
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "O Canto da Sorte usa suas fotos para ilustrar os produtos do cardápio.",
+          "cameraPermission": "O Canto da Sorte usa a câmera para tirar foto dos produtos do cardápio."
+        }
+      ],
+      "expo-sharing"
+    ]
+  }
+}
