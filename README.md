@@ -1,180 +1,224 @@
+<div align="center">
+
+<img src="assets/logo-canto-da-sorte.png" alt="Canto da Sorte" width="180" />
+
 # PDV Canto da Sorte
 
-Aplicativo de ponto de venda (PDV) para o bar **Canto da Sorte**, feito para
-rodar em tablets/celulares Android atrás do balcão. Controla o mapa de mesas,
-lançamento de pedidos, fechamento de conta e o cardápio (produtos e seções).
+**Ponto de venda offline-first para bar** — controle de mesas, comandas e
+cardápio, feito para rodar em tablets Android atrás do balcão.
 
-## Visão geral
+[![React Native](https://img.shields.io/badge/React_Native-0.86-20232A?logo=react&logoColor=61DAFB)](https://reactnative.dev)
+[![Expo SDK](https://img.shields.io/badge/Expo_SDK-57-000020?logo=expo&logoColor=white)](https://docs.expo.dev/versions/v57.0.0/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![SQLite](https://img.shields.io/badge/SQLite-local_first-003B57?logo=sqlite&logoColor=white)](https://docs.expo.dev/versions/v57.0.0/sdk/sqlite/)
+[![Supabase](https://img.shields.io/badge/Supabase-sync_opcional-3FCF8E?logo=supabase&logoColor=white)](https://supabase.com)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
-- **Mapa de mesas**: cards mostrando cada mesa como Livre ou Ocupada, com
-  contagem de itens e total da comanda.
-- **Lançamento de pedidos**: painel lateral com abas por categoria (Chopp,
-  Porções, etc.) — tocar num produto adiciona 1 unidade à mesa selecionada.
-- **Checkout**: tela de fechamento com ajuste de quantidades, total e escolha
-  da forma de pagamento (Dinheiro, Pix, Débito, Crédito).
-- **Produtos & Seções**: gestão simples do cardápio (criar/editar/remover
-  seções e produtos, marcar disponível/esgotado), com salvamento automático.
-- **Vendas do dia**: total acumulado das vendas fechadas hoje, exibido no
-  cabeçalho.
+</div>
+
+---
+
+> **O problema:** o Wi-Fi do bar cai no meio do sábado à noite. Um PDV que
+> depende de internet trava junto — e a fila no balcão não espera.
+>
+> **A solução:** o app grava tudo no SQLite do próprio aparelho e trata a nuvem
+> como um reforço opcional. Sem internet, ele funciona 100%. Quando a conexão
+> volta, a fila de sincronização drena sozinha, em segundo plano.
+
+## Screenshots
+
+<!--
+  TODO: substituir os placeholders abaixo pelos prints do tablet.
+  Sugestão: criar a pasta docs/screenshots/ e salvar as imagens lá, por exemplo:
+
+  | Mapa de mesas | Lançamento de pedido |
+  |:---:|:---:|
+  | <img src="docs/screenshots/mesas.png" width="400" /> | <img src="docs/screenshots/pedido.png" width="400" /> |
+
+  | Checkout | Relatório de vendas |
+  |:---:|:---:|
+  | <img src="docs/screenshots/checkout.png" width="400" /> | <img src="docs/screenshots/relatorio.png" width="400" /> |
+-->
+
+| Mapa de mesas | Lançamento de pedido |
+|:---:|:---:|
+| _(screenshot em breve)_ | _(screenshot em breve)_ |
+
+| Checkout | Relatório de vendas |
+|:---:|:---:|
+| _(screenshot em breve)_ | _(screenshot em breve)_ |
+
+## Funcionalidades
+
+- **Mapa de mesas** — cada mesa como card Livre/Ocupada, com contagem de itens
+  e total da comanda em tempo real.
+- **Lançamento de pedidos** — painel lateral com abas por categoria (Chopp,
+  Porções…); tocar no produto adiciona à mesa selecionada.
+- **Checkout** — ajuste de quantidades, total e forma de pagamento
+  (Dinheiro, Pix, Débito, Crédito).
+- **Cardápio** — criar/editar seções e produtos, marcar esgotado, **foto do
+  produto** pela câmera ou galeria (com upload para o Supabase Storage).
+- **Relatório de vendas** — total do dia, produtos mais vendidos e
+  **exportação em PDF** (`expo-print`) para compartilhar.
+- **Multi-aparelho** — 2 ou 3 tablets no mesmo bar, sincronizando entre si.
 
 ## Arquitetura: offline-first
 
-O app foi desenhado para funcionar **sem depender de internet**:
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      APARELHO (tablet)                      │
+│                                                             │
+│   UI (React Native)                                         │
+│        │                                                    │
+│        ▼                                                    │
+│   Zustand store ──────────┐                                 │
+│        │                  │                                 │
+│        ▼                  ▼                                 │
+│   SQLite local  ──►  sync_queue                             │
+│  (fonte da verdade)  (fila FIFO de operações pendentes)     │
+│        ▲                  │                                 │
+└────────┼──────────────────┼─────────────────────────────────┘
+         │                  │
+    aplica LWW         drena quando há rede
+   (updated_at)             │
+         │                  ▼
+┌────────┴──────────────────────────────────────────┐
+│                   SUPABASE                        │
+│   Postgres  ·  Realtime  ·  Storage (fotos)       │
+└───────────────────────────────────────────────────┘
+         │
+         └──► Realtime empurra a mudança para os OUTROS aparelhos
+```
 
-1. **Fonte da verdade local**: todas as escritas (abrir mesa, lançar item,
-   fechar conta, editar cardápio) gravam imediatamente no **SQLite** do
-   próprio aparelho (`expo-sqlite`). O PDV continua funcionando 100% mesmo
-   com o Wi-Fi caindo no meio do expediente.
-2. **Fila de sincronização**: cada escrita local também é enfileirada
-   (`sync_queue`) como uma operação pendente (`upsert` ou `delete`).
-3. **Sincronização em segundo plano**: quando há internet, um motor de sync
-   (`src/sync/syncEngine.ts`) drena essa fila periodicamente e envia os dados
-   para o **Supabase** (Postgres na nuvem), que funciona como **backup e
-   ponto de encontro** entre os aparelhos.
-4. **Vários aparelhos**: pensado para uso com **2 a 3 aparelhos** no mesmo bar
-   (ex.: um no balcão, um ou dois com os garçons). Cada um grava local e
-   sincroniza; o último a gravar em cada registro "vence" (last-write-wins
-   por `updated_at`) — adequado para o volume e ritmo de um bar de bairro.
-5. **Sem Supabase configurado, sem problema**: se as credenciais no arquivo
-   `.env` estiverem vazias ou ausentes, o app detecta isso automaticamente
-   (`isSupabaseConfigured()`) e roda **inteiramente local**, sem travar nem
-   lançar erros — a sincronização apenas fica "desligada".
+**Como funciona na prática:**
 
-Ou seja: o Supabase é um **reforço/backup em nuvem**, não uma dependência
-obrigatória para o bar funcionar no dia a dia.
+1. **O local manda.** Toda escrita (abrir mesa, lançar item, fechar conta)
+   grava primeiro no SQLite via `expo-sqlite` — dentro de transação. A UI nunca
+   espera a rede.
+2. **Fila de sincronização.** A mesma escrita enfileira uma operação
+   (`upsert`/`delete`) na tabela `sync_queue`, com o payload já mapeado para o
+   schema remoto.
+3. **Drenagem em segundo plano.** [`syncEngine.ts`](src/sync/syncEngine.ts)
+   esvazia a fila periodicamente quando há rede. **Falha não perde dado:** o
+   item permanece na fila e é retentado no ciclo seguinte.
+4. **Tempo real.** [`realtime.ts`](src/sync/realtime.ts) escuta mudanças das
+   outras estações e aplica localmente — a mesa que o garçom abriu aparece no
+   balcão em segundos.
+5. **Conflito resolvido por last-write-wins** (`updated_at`), com pull
+   incremental por cursor. Adequado ao volume e ao ritmo de um bar de bairro.
+6. **Degradação graciosa.** Sem credenciais configuradas,
+   `isSupabaseConfigured()` retorna `false`, o status vira `'disabled'` e o app
+   roda inteiramente local — **sem travar nem lançar erro**.
 
-## Stack técnica
+### Detalhes de implementação que valem nota
 
-- [Expo](https://expo.dev) SDK 57 + React Native 0.86 + React 19
-- TypeScript (modo estrito)
-- `expo-sqlite` — banco local
-- `@supabase/supabase-js` — sincronização/backup em nuvem (opcional)
-- `@react-native-async-storage/async-storage` — persistência de sessão/config
-- `zustand` — estado da aplicação
-- `expo-network` — detecção de conectividade
-- `@expo/vector-icons` (Feather) — ícones
-- Fontes: `Pacifico` (marca), `Oswald` (títulos), `Manrope` (corpo de texto)
-- Estilização com `StyleSheet` puro (sem NativeWind ou libs de UI externas)
+- **Sem loop de push.** O aparelho que escreveu também recebe o próprio evento
+  do Realtime. `applyRemoteRow` grava no SQLite **sem** chamar `enqueue()`,
+  então aplicar uma linha remota não reenfileira nada. A operação é idempotente
+  (LWW: remoto == local ⇒ nada muda).
+- **Tolerância a falha na subscrição.** Erro ao aplicar uma linha é logado e
+  engolido, sem derrubar as demais tabelas/eventos.
+- **Responsivo + adaptativo.** [`useScale`](src/theme/scale.ts) escala tamanhos;
+  [`breakpoints.ts`](src/theme/breakpoints.ts) troca a *estrutura* do layout por
+  faixa de tela — master-detail em tablet paisagem, empilhado em celular.
+  O `width` é arredondado porque, no web, valores fracionários oscilantes
+  recriavam estilos e derrubavam o foco dos inputs.
+- **Camada de relatório pura.** [`reportPdf.ts`](src/utils/reportPdf.ts) recebe
+  os dados prontos e devolve HTML — sem tocar banco nem estado, e com
+  `generatedAt` como parâmetro, o que a mantém determinística e testável.
+- **Índices onde importa:** `products(section_id)`, `order_items(table_id)`,
+  `sales(closed_at)`, `sync_queue(created_at)`.
 
-## Como rodar em desenvolvimento
+## Stack
 
-Pré-requisitos: [Node.js](https://nodejs.org) LTS instalado e o app
-[**Expo Go**](https://expo.dev/go) no seu celular Android (disponível na
-Play Store).
+| Camada | Tecnologia |
+|---|---|
+| App | React Native 0.86 · Expo SDK 57 · TypeScript 6 |
+| Estado | Zustand (com selectors memoizados) |
+| Banco local | SQLite (`expo-sqlite`) — fonte da verdade |
+| Nuvem (opcional) | Supabase: Postgres · Realtime · Storage |
+| Extras | `expo-print` (PDF) · `expo-image-picker` · `expo-network` |
+
+## Como rodar
+
+Pré-requisitos: [Node.js](https://nodejs.org) LTS e o app
+[**Expo Go**](https://expo.dev/go) no celular Android.
 
 ```bash
-# 1. Instalar as dependências (só na primeira vez ou após mudar o package.json)
+# 1. Instalar as dependências
 npm install
 
-# 2. Configurar as variáveis de ambiente (opcional — sem isso o app roda offline)
+# 2. Configurar variáveis de ambiente (opcional — sem isso, roda offline)
 cp .env.example .env   # no Windows: copy .env.example .env
 
 # 3. Iniciar o servidor de desenvolvimento
 npx expo start
 ```
 
-Isso abre o **Metro Bundler** no terminal com um QR code. A partir daí:
+Abra o **Expo Go**, escaneie o QR Code e o app carrega. Na primeira execução o
+SQLite é criado e populado com o catálogo inicial ([`seed.ts`](src/data/seed.ts)).
 
-- **Celular físico**: abra o app Expo Go e escaneie o QR code (celular e
-  computador precisam estar na mesma rede Wi-Fi).
-- **Emulador Android**: com o Android Studio e um emulador configurados,
-  pressione a tecla **`a`** no terminal onde o `expo start` está rodando.
-- **Recarregar**: pressione **`r`** no terminal para dar reload no app depois
-  de alterar código.
+> **Sem configurar nada, o app já funciona por completo** — em modo local.
+> O Supabase é reforço, não requisito.
 
-Não é necessário nenhum passo extra de build para testar durante o
-desenvolvimento — o Expo Go carrega o JavaScript diretamente.
+## Sincronização com o Supabase (opcional)
 
-## Como configurar o Supabase (sincronização em nuvem)
-
-Este passo é **opcional** — o app funciona sem ele. Faça-o quando quiser que
-os dados sejam salvos também na nuvem (backup) e/ou sincronizados entre mais
-de um aparelho.
-
-1. Crie uma conta gratuita em [supabase.com](https://supabase.com) e crie um
-   **novo projeto**.
-2. No painel do projeto, abra **SQL Editor** > **New query**.
-3. Copie todo o conteúdo do arquivo [`supabase/schema.sql`](./supabase/schema.sql)
-   deste repositório, cole no editor e clique em **Run**. Isso cria as
-   tabelas `sections`, `products`, `tables`, `order_items` e `sales`, já com
-   índices e Row Level Security (RLS) habilitados.
-4. Vá em **Project Settings > API** e copie:
-   - **Project URL** (algo como `https://xxxxxxxx.supabase.co`)
-   - **anon public key** (uma chave longa, começa geralmente com `eyJ...`)
-5. Copie `.env.example` para `.env` na raiz do projeto e cole os dois valores:
+1. Crie um projeto em [supabase.com](https://supabase.com) (o plano free basta).
+2. No **SQL Editor**, rode [`supabase/schema-pdv.sql`](supabase/schema-pdv.sql).
+3. Em **Project Settings > API**, copie a **Project URL** e a **anon public key**.
+4. Cole no seu `.env`:
 
    ```bash
    EXPO_PUBLIC_SUPABASE_URL=https://xxxxxxxx.supabase.co
    EXPO_PUBLIC_SUPABASE_ANON_KEY=eyJ...
    ```
 
-   O `.env` não é versionado (está no `.gitignore`), então suas credenciais
-   ficam apenas na sua máquina.
+5. Reinicie o `npx expo start`. A sincronização passa a rodar sozinha.
 
-6. Salve o arquivo e reinicie o `npx expo start`. A partir daí o app passa a
-   sincronizar automaticamente em segundo plano sempre que houver internet.
+O `.env` está no `.gitignore` — suas credenciais ficam só na sua máquina.
+Guia passo a passo para quem nunca usou Supabase:
+[`SETUP-SUPABASE.md`](./SETUP-SUPABASE.md).
 
-Veja também o guia simplificado [`SETUP-SUPABASE.md`](./SETUP-SUPABASE.md),
-pensado para quem nunca usou o Supabase antes.
+> [!WARNING]
+> Variáveis `EXPO_PUBLIC_` são embutidas **em texto puro** no bundle compilado.
+> Use apenas a chave anônima, nunca a `service_role`. As policies de exemplo
+> liberam acesso a `anon` para simplificar a instalação em rede local — para uso
+> exposto à internet, restrinja-as a usuários autenticados.
 
-## Como gerar o APK localmente (instalação direta no Android)
-
-Para instalar o app em um tablet/celular do bar sem depender de loja de
-aplicativos, gere um APK localmente:
-
-### Pré-requisitos
-
-- **JDK 17** instalado (Android Gradle exige essa versão).
-- **Android SDK** instalado (via [Android Studio](https://developer.android.com/studio),
-  que já traz o SDK Manager) e a variável de ambiente `ANDROID_HOME`
-  apontando para ele.
-
-### Passos
+## Gerar o APK
 
 ```bash
-# 1. Gerar o projeto nativo Android (cria a pasta "android/")
-npx expo prebuild
-
-# 2. Entrar na pasta do projeto Android
+npx expo prebuild --platform android
 cd android
-
-# 3. Gerar o APK de release
-./gradlew assembleRelease
+./gradlew assembleRelease     # no Windows: .\gradlew.bat assembleRelease
 ```
 
-No Windows, use `gradlew.bat assembleRelease` (sem o `./`) caso não esteja
-usando Git Bash/WSL.
+Requer **JDK 17** e o **Android SDK** instalados.
 
-Ao final, o APK fica em:
+O APK sai em `android/app/build/outputs/apk/release/`. É assinado com a chave de
+debug, suficiente para instalar direto nos aparelhos do bar (é preciso permitir
+"instalar de fontes desconhecidas"). Para publicar na Play Store seria
+necessária uma chave de assinatura própria — fora do escopo deste uso local.
 
-```
-android/app/build/outputs/apk/release/app-release.apk
-```
-
-Basta transferir esse arquivo para o aparelho (cabo USB, e-mail, etc.) e
-instalar manualmente (é preciso permitir "instalar de fontes desconhecidas"
-nas configurações do Android).
-
-> **Observação**: por padrão o `assembleRelease` gera um APK assinado com uma
-> chave de debug/automática do Gradle, suficiente para uso interno no próprio
-> bar. Para publicar na Play Store futuramente, seria necessário configurar
-> uma chave de assinatura própria — fora do escopo deste uso local.
-
-## Estrutura de pastas (resumo)
+## Estrutura
 
 ```
 src/
-  theme/       # cores e tipografia (colors.ts, typography.ts)
-  types/       # tipos de domínio compartilhados (Section, Product, Table...)
-  data/        # catálogo inicial (seed.ts)
-  config/      # leitura das variáveis de ambiente (env.ts)
-  sync/        # motor de sincronização com o Supabase (opcional/degrada local)
-  db/          # acesso ao SQLite local (fonte da verdade do app)
+  screens/     # MainScreen — mapa de mesas + painel de pedidos
+  components/  # botões, badges, toasts e os modais (checkout, catálogo, relatório)
+  store/       # Zustand: estado do PDV e selectors
+  db/          # SQLite: schema, migrations, CRUD e a sync_queue
+  sync/        # motor de sincronização, realtime, upload de imagem
+  theme/       # cores, tipografia, escala e breakpoints
+  types/       # tipos de domínio (Section, Product, Table, Sale...)
+  data/        # catálogo inicial (seed)
+  config/      # leitura das variáveis de ambiente
 supabase/
-  schema.sql   # script para criar as tabelas no Supabase
+  schema-pdv.sql       # tabelas, índices e RLS
+  storage-produtos.sql # bucket das fotos de produto
 ```
 
 ## Licença
 
-MIT — ver [`LICENSE`](./LICENSE). Projeto desenvolvido para uso no bar
-Canto da Sorte e publicado como portfólio.
+MIT — ver [`LICENSE`](./LICENSE). Desenvolvido para uso no bar Canto da Sorte e
+publicado como portfólio.
